@@ -19,4 +19,4 @@ Recent history follows Conventional Commit style, for example `fix: ...`, `refac
 Keep local secrets in `.env` or generated test files such as `.env.test`, and never commit them. OAuth tokens are stored under `CLAUDE_PLUGIN_DATA`; tests already isolate this path via `tmp_path`, so preserve that pattern in new tests.
 
 ## Publishing to the Marketplace
-After bumping `version` in `.claude-plugin/plugin.json`, run `./scripts/sync-marketplace-version.sh` to propagate that version into `~/Projects/plugin-marketplace/.claude-plugin/marketplace.json`, commit, and push to `main`. The script reads `plugin.json` as the source of truth, never increments on its own, and is idempotent — re-running with no version change is a no-op.
+Run `./scripts/update-version.sh VERSION` to update all plugin version fields (`pyproject.toml`, `.claude-plugin/plugin.json`, `.agents/plugins/marketplace.json`, and the bundled Codex plugin manifest), then propagate that version into `~/Projects/plugin-marketplace/.claude-plugin/marketplace.json`, commit, and push the marketplace repo. The version argument is required.

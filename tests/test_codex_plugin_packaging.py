@@ -1,9 +1,12 @@
 import json
+import tomllib
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+PYPROJECT = REPO_ROOT / "pyproject.toml"
 PLUGIN_ROOT = REPO_ROOT / "plugins" / "yandex-direct"
+ROOT_PLUGIN_MANIFEST = REPO_ROOT / ".claude-plugin" / "plugin.json"
 PLUGIN_MANIFEST = PLUGIN_ROOT / ".codex-plugin" / "plugin.json"
 MARKETPLACE_MANIFEST = REPO_ROOT / ".agents" / "plugins" / "marketplace.json"
 MCP_MANIFEST = PLUGIN_ROOT / ".mcp.json"
@@ -12,6 +15,10 @@ SERVER_ENTRYPOINT = PLUGIN_ROOT / "server" / "main.py"
 
 def _load_json(path: Path) -> dict:
     return json.loads(path.read_text())
+
+
+def _load_pyproject() -> dict:
+    return tomllib.loads(PYPROJECT.read_text())
 
 
 def test_codex_plugin_bundle_exists() -> None:
@@ -23,13 +30,16 @@ def test_codex_plugin_bundle_exists() -> None:
 
 
 def test_marketplace_entry_points_to_plugin_bundle() -> None:
+    root_plugin = _load_json(ROOT_PLUGIN_MANIFEST)
+    pyproject = _load_pyproject()
     marketplace = _load_json(MARKETPLACE_MANIFEST)
 
     plugin_entry = next(
         item for item in marketplace["plugins"] if item["name"] == "yandex-direct"
     )
 
-    assert plugin_entry["version"] == "0.1.6"
+    assert pyproject["project"]["version"] == root_plugin["version"]
+    assert plugin_entry["version"] == root_plugin["version"]
     assert plugin_entry["source"] == {
         "source": "local",
         "path": "./plugins/yandex-direct",
@@ -42,11 +52,12 @@ def test_marketplace_entry_points_to_plugin_bundle() -> None:
 
 
 def test_plugin_manifest_matches_bundle_layout() -> None:
+    root_plugin = _load_json(ROOT_PLUGIN_MANIFEST)
     plugin = _load_json(PLUGIN_MANIFEST)
     mcp = _load_json(MCP_MANIFEST)
 
     assert plugin["name"] == "yandex-direct"
-    assert plugin["version"] == "0.1.6"
+    assert plugin["version"] == root_plugin["version"]
     assert plugin["skills"] == "./skills/"
     assert plugin["mcpServers"] == "./.mcp.json"
     assert plugin["interface"]["displayName"] == "Yandex Direct"
