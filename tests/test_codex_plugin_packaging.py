@@ -29,7 +29,7 @@ def test_marketplace_entry_points_to_plugin_bundle() -> None:
         item for item in marketplace["plugins"] if item["name"] == "yandex-direct"
     )
 
-    assert plugin_entry["version"] == "0.1.5"
+    assert plugin_entry["version"] == "0.1.6"
     assert plugin_entry["source"] == {
         "source": "local",
         "path": "./plugins/yandex-direct",
@@ -46,7 +46,7 @@ def test_plugin_manifest_matches_bundle_layout() -> None:
     mcp = _load_json(MCP_MANIFEST)
 
     assert plugin["name"] == "yandex-direct"
-    assert plugin["version"] == "0.1.5"
+    assert plugin["version"] == "0.1.6"
     assert plugin["skills"] == "./skills/"
     assert plugin["mcpServers"] == "./.mcp.json"
     assert plugin["interface"]["displayName"] == "Yandex Direct"
