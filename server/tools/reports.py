@@ -30,6 +30,11 @@ CUSTOM_REPORT_TIMEOUT_SECONDS = 120
 VALID_RESPONSE_FORMATS = frozenset({"json", "tsv", "csv", "table"})
 
 
+def _is_goals_filter(filter_expr: str) -> bool:
+    """Return whether a raw report filter targets the API's Goals field."""
+    return filter_expr.lstrip().lower().startswith("goals:")
+
+
 def _resolve_report_dates(
     date_from: str | None, date_to: str | None
 ) -> tuple[str, str]:
@@ -128,11 +133,6 @@ def reports_list_types() -> list[str] | dict:
     """
     runner = get_runner()
     return runner.run_json(["reports", "list-types"])
-
-
-def _filter_field(filter_str: str) -> str:
-    """Extract FIELD from a 'FIELD:OPERATOR:VALUES' filter string."""
-    return filter_str.split(":", 1)[0] if ":" in filter_str else filter_str
 
 
 def _allowed_output_roots() -> tuple[Path, ...]:
@@ -284,15 +284,11 @@ def reports_custom(
     with an opaque `error_code=8000`, so a local dry run saves a round-trip.
 
     Args:
-        field_names: Comma-separated list of report fields (dimensions + metrics).
-            Common dimensions for grouping: Date, Week, Month, Quarter, Year,
-            CampaignName, CampaignId, AdGroupName, AdGroupId, AdId, Criterion,
-            Device, Placement, Gender, Age, Slot, TargetingLocationName.
-            Common metrics: Impressions, Clicks, Cost, Ctr, AvgCpc,
-            AvgClickPosition, AvgImpressionPosition, BounceRate, AvgPageviews,
-            Conversions, CostPerConversion, ConversionRate, Goals, Revenue.
-            Example for "stats by month with goals":
-              "Month,Impressions,Clicks,Cost,Goals,Conversions"
+        field_names: Comma-separated FieldNames per Yandex.Direct Reports API
+            spec (case-sensitive enum, scoped to `report_type`). When unsure,
+            pass `dry_run=True` to inspect the request body, or check the
+            spec at https://yandex.com/dev/direct/doc/reports/spec.html.
+            See Examples below for working combinations.
         date_from: Start date (YYYY-MM-DD). Required unless date_range_type is set.
         date_to: End date (YYYY-MM-DD). Required unless date_range_type is set.
             For "last 2 years" pass explicit dates — date_range_type does NOT
@@ -309,21 +305,18 @@ def reports_custom(
             last_7_days, this_week_mon_today, this_week_mon_sun, last_week,
             last_business_week, last_3_months, last_5_years, auto. Cannot be
             combined with explicit dates.
-        goal_ids: Convenience shortcut. Comma-separated Metrika goal IDs.
-            Internally translates to --filter Goals:IN:<ids>. Note: in
-            CUSTOM_REPORT the field is named `Goals` (NOT `GoalsIds`).
+        goal_ids: Comma-separated Metrika goal IDs (max 10). When set,
+            conversion metrics in the output are split per goal — see Returns.
             Find goal IDs via `v4goals_get_stat_goals(campaign_ids=...)`.
-            When `Goals` is also in field_names, each row reports per-goal
-            conversions for those goal IDs.
         campaign_ids: Comma-separated campaign IDs (max 10). Maps to
             --campaign-ids.
         adgroup_ids: Comma-separated ad group IDs (max 10). Maps to
             --adgroup-ids.
-        filters: Repeatable raw filters in `FIELD:OPERATOR:VALUES` form.
-            Operators: EQUALS, NOT_EQUALS, IN, NOT_IN, LESS_THAN, GREATER_THAN,
-            STARTS_WITH_IGNORE_CASE, DOES_NOT_START_WITH_IGNORE_CASE.
+        filters: Repeatable raw filters in `FIELD:OPERATOR:VALUES` form. The
+            set of valid Field/Operator values is owned by the Reports API
+            spec. For goal-based slicing use `goal_ids` (see above). When in
+            doubt, run with `dry_run=True`.
             Example: ["Impressions:GREATER_THAN:0", "Device:IN:DESKTOP,MOBILE"].
-            Cannot include a `Goals:` filter when `goal_ids` is also passed.
         order_by: Repeatable `FIELD[:ASC|DESC]`. Example: ["Month:ASC"].
         page_limit: For paginated retrieval of large reports.
         page_offset: For paginated retrieval of large reports.
@@ -346,14 +339,16 @@ def reports_custom(
 
     Examples:
 
-        # "Stats for 2 years, group by months, goals 12345 and 67890"
+        # "Stats for 2 years, by months, broken down by 2 goals"
         reports_custom(
-            field_names="Month,CampaignName,Impressions,Clicks,Cost,Goals,Conversions",
+            field_names="Month,CampaignName,Impressions,Clicks,Cost,Conversions,CostPerConversion",
             date_from="2024-04-29", date_to="2026-04-29",
             goal_ids="12345,67890",
             order_by=["Month:ASC", "CampaignName:ASC"],
-            output_path="/tmp/direct_2y_by_month.json",
+            output_path="/tmp/direct_2y_by_goals.json",
         )
+        # Output adds per-goal columns: Conversions_12345_LSC,
+        # Conversions_67890_LSC, CostPerConversion_12345_LSC, etc.
 
         # "Top 50 keywords by cost last month"
         reports_custom(
@@ -376,6 +371,11 @@ def reports_custom(
         list[dict] of report rows by default; OR
         {output_path, rows_written, report_type, format} when output_path is
         set; OR a ToolError dict on failure.
+
+        With `goal_ids` set, Yandex splits conversion metrics into per-goal
+        columns: `Conversions_<goal_id>_<attribution>`, and same for
+        `CostPerConversion`. Default attribution code is `LSC`. To inspect
+        this in advance, run with `dry_run=True`.
     """
     if response_format not in VALID_RESPONSE_FORMATS:
         raise ValueError(
@@ -392,13 +392,11 @@ def reports_custom(
         )
 
     effective_filters: list[str] = list(filters) if filters else []
-    if goal_ids:
-        if any(_filter_field(f).lower() == "goals" for f in effective_filters):
-            raise ValueError(
-                "conflicting goal filter: pass either goal_ids or "
-                "filters with a 'Goals:' entry, not both"
-            )
-        effective_filters.append(f"Goals:IN:{goal_ids}")
+    if any(_is_goals_filter(f) for f in effective_filters):
+        raise ValueError(
+            "Goals filters are not supported by Reports API Filter.Field; "
+            "pass goal IDs via goal_ids instead"
+        )
 
     name = report_name or f"mcp_custom_{int(time.time() * 1000)}"
 
@@ -416,6 +414,8 @@ def reports_custom(
         args.extend(["--campaign-ids", campaign_ids])
     if adgroup_ids:
         args.extend(["--adgroup-ids", adgroup_ids])
+    if goal_ids:
+        args.extend(["--goals", goal_ids])
 
     for f in effective_filters:
         args.extend(["--filter", f])
