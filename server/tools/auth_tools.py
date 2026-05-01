@@ -1,20 +1,19 @@
 """MCP tools and prompts for direct-cli authentication profiles."""
 
 import json
-import os
-import selectors
-import subprocess
 import time
 from pathlib import Path
-from typing import IO, Any, cast
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 from mcp.server.fastmcp import Context
 
 from server.cli.runner import (
+    CliError,
+    CliNotFoundError,
+    CliTimeoutError,
     DirectCliRunner,
-    _direct_env,
     _find_direct,
     _strip_ansi,
 )
@@ -106,17 +105,20 @@ def _resolve_profile_name(profile: str | None = None) -> str:
     return selected or "default"
 
 
-def _terminate_and_wait(proc: subprocess.Popen[str]) -> None:
-    proc.terminate()
+def _run_auth_command(
+    args: list[str], *, timeout: int | None = None, input: str | None = None
+) -> dict:
     try:
-        proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait(timeout=5)
-
-
-def _run_auth_command(args: list[str], *, timeout: int | None = None) -> dict:
-    result = _runner().run(args, timeout=timeout)
+        if input is None:
+            result = _runner().run(args, timeout=timeout)
+        else:
+            result = _runner().run(args, timeout=timeout, input=input)
+    except CliNotFoundError as e:
+        return {"success": False, "error": "cli_not_found", "message": str(e)}
+    except CliTimeoutError as e:
+        return {"success": False, "error": "timeout", "message": str(e)}
+    except CliError as e:
+        return {"success": False, "error": "auth_failed", "message": str(e)}
     stdout = _strip_ansi(result.stdout).strip()
     stderr = _strip_ansi(result.stderr).strip()
     if result.returncode != 0:
@@ -130,71 +132,39 @@ def _run_auth_command(args: list[str], *, timeout: int | None = None) -> dict:
     return {"success": True, "message": stdout or stderr}
 
 
-def _setup_args(
-    code: str, *, login: str | None = None, profile: str = "default"
+def _token_setup_args(
+    token: str, *, login: str | None = None, profile: str = "default"
 ) -> list[str]:
-    args = ["auth", "login", "--profile", profile]
-    if code.startswith("y0_"):
-        args.extend(["--oauth-token", code])
-    else:
-        args.extend(["--code", code])
+    args = ["auth", "login", "--profile", profile, "--oauth-token", token]
     if login:
         args.extend(["--login", login])
     return args
 
 
-def _extract_auth_url(line: str) -> str | None:
-    for part in line.split():
-        if part.startswith("https://oauth.yandex.ru/authorize"):
-            return part
-    return None
-
-
-def _login_process_args(
-    login: str | None = None, profile: str = "default"
-) -> list[str]:
-    args = ["auth", "login", "--profile", profile]
+def _login_start_args(login: str | None = None, profile: str = "default") -> list[str]:
+    args = ["auth", "login", "--profile", profile, "--format", "json"]
     if login:
         args.extend(["--login", login])
     return args
 
 
-def _read_auth_url_from_process(
-    proc: subprocess.Popen[str], *, timeout: float = 10
-) -> tuple[str | None, str]:
-    selector = selectors.DefaultSelector()
-    output_chunks: list[str] = []
-    streams = [stream for stream in (proc.stdout, proc.stderr) if stream is not None]
-    for stream in streams:
-        os.set_blocking(stream.fileno(), False)
-        selector.register(stream, selectors.EVENT_READ)
+def _login_finish_args(*, profile: str = "default") -> list[str]:
+    return ["auth", "login", "--profile", profile, "--code-stdin"]
 
+
+def _clean_cli_output(stdout: str = "", stderr: str = "") -> str:
+    return _strip_ansi(stderr or stdout).strip()
+
+
+def _parse_authorize_url(stdout: str) -> str | None:
     try:
-        deadline = time.monotonic() + timeout
-        while selector.get_map() and time.monotonic() < deadline:
-            if proc.poll() is not None and not selector.get_map():
-                break
-            remaining = max(0.0, deadline - time.monotonic())
-            events = selector.select(timeout=remaining)
-            if not events:
-                break
-            for key, _mask in events:
-                stream = cast(IO[str], key.fileobj)
-                try:
-                    chunk = os.read(stream.fileno(), 4096)
-                except BlockingIOError:
-                    continue
-                if not chunk:
-                    selector.unregister(stream)
-                    continue
-                clean = _strip_ansi(chunk.decode(errors="replace"))
-                output_chunks.append(clean)
-                if auth_url := _extract_auth_url("".join(output_chunks)):
-                    return auth_url, "".join(output_chunks).strip()
-    finally:
-        selector.close()
-
-    return None, "".join(output_chunks).strip()
+        payload = json.loads(_strip_ansi(stdout).strip())
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    authorize_url = payload.get("authorize_url")
+    return authorize_url if isinstance(authorize_url, str) and authorize_url else None
 
 
 # --- MCP Tools ---
@@ -215,24 +185,41 @@ def auth_status(profile: str | None = None) -> dict:
 
 @mcp.tool()
 def auth_setup(code: str, login: str | None = None, profile: str = "default") -> dict:
-    """Save an OAuth code or direct OAuth token into a direct-cli profile.
+    """Save a direct OAuth token into a direct-cli profile.
 
     Args:
-        code: Authorization code from Yandex, or a direct OAuth token (starts with y0_).
+        code: Direct OAuth token (starts with y0_).
         login: Optional Yandex.Direct Client-Login to save with the profile.
         profile: direct-cli profile name to save and activate.
     """
     if not code:
         return {
             "error": "invalid_code",
-            "message": "Введите код авторизации или OAuth-токен.",
+            "message": "Введите готовый OAuth-токен, начинающийся с y0_.",
+            "hint": (
+                "Для browser OAuth запустите auth_login(); "
+                'auth_setup принимает только auth_setup(code="y0_...").'
+            ),
         }
-    result = _run_auth_command(_setup_args(code, login=login, profile=profile))
+    if not code.startswith("y0_"):
+        return {
+            "success": False,
+            "error": "unsupported_oauth_code_flow",
+            "message": (
+                "Код из браузерного OAuth нельзя сохранить через auth_setup: "
+                "он завершается только через pending PKCE flow в auth_login()."
+            ),
+            "hint": (
+                "Для browser OAuth запустите auth_login() и введите код в его форму; "
+                'для готового токена передайте auth_setup(code="y0_...").'
+            ),
+        }
+    result = _run_auth_command(_token_setup_args(code, login=login, profile=profile))
     if not result.get("success"):
         return result
     return {
         "success": True,
-        "method": "direct_token" if code.startswith("y0_") else "oauth_code",
+        "method": "direct_token",
         "profile": profile,
         "login": login or "",
     }
@@ -254,40 +241,47 @@ async def auth_login(
         return {"already_authenticated": True, **status}
     target_profile = _resolve_profile_name(profile)
 
-    direct_bin = _find_direct()
-    if not direct_bin:
+    if not _find_direct():
         return {
             "error": "cli_not_found",
             "message": "direct not found. Install direct-cli.",
         }
 
-    cmd = [direct_bin, *_login_process_args(login=login, profile=target_profile)]
     try:
-        proc = subprocess.Popen(
-            cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            env=_direct_env(),
+        start_result = _runner().run(
+            _login_start_args(login=login, profile=target_profile),
+            timeout=30,
+            input="",
         )
-    except FileNotFoundError:
+    except CliNotFoundError as e:
+        return {"success": False, "error": "cli_not_found", "message": str(e)}
+    except CliTimeoutError as e:
+        return {"success": False, "error": "timeout", "message": str(e)}
+    except CliError as e:
+        return {"success": False, "error": "auth_login_failed", "message": str(e)}
+    start_stdout = _strip_ansi(start_result.stdout).strip()
+    start_stderr = _strip_ansi(start_result.stderr).strip()
+    if start_result.returncode != 0:
         return {
-            "error": "cli_not_found",
-            "message": "direct not found. Install direct-cli.",
+            "success": False,
+            "error": "auth_login_failed",
+            "message": _clean_cli_output(start_stdout, start_stderr)
+            or f"direct failed with exit {start_result.returncode}",
         }
 
-    auth_url, output = _read_auth_url_from_process(proc, timeout=10)
-
+    auth_url = _parse_authorize_url(start_stdout)
     if not auth_url:
+        message = _clean_cli_output(start_stdout, start_stderr)
         try:
-            stdout, stderr = proc.communicate(timeout=5)
-        except subprocess.TimeoutExpired:
-            _terminate_and_wait(proc)
-            stdout, stderr = "", ""
+            parsed_stdout = json.loads(start_stdout)
+        except json.JSONDecodeError:
+            parsed_stdout = None
+        if isinstance(parsed_stdout, dict):
+            message = "direct auth login did not return authorize_url."
         return {
+            "success": False,
             "error": "auth_login_failed",
-            "message": _strip_ansi(stderr or stdout or output).strip(),
+            "message": message or "direct auth login did not return authorize_url.",
         }
 
     result = await ctx.elicit(
@@ -298,17 +292,15 @@ async def auth_login(
         schema=AuthCredential,
     )
     if result.action != "accept" or not result.data:
-        _terminate_and_wait(proc)
         return {"cancelled": True, "message": "Авторизация отменена."}
 
-    stdout, stderr = proc.communicate(input=f"{result.data.value}\n", timeout=60)
-    if proc.returncode != 0:
-        return {
-            "success": False,
-            "error": "auth_failed",
-            "message": _strip_ansi(stderr or stdout).strip(),
-            "auth_url": auth_url,
-        }
+    finish_result = _run_auth_command(
+        _login_finish_args(profile=target_profile),
+        timeout=60,
+        input=f"{result.data.value}\n",
+    )
+    if not finish_result.get("success"):
+        return {**finish_result, "auth_url": auth_url}
     return {
         "success": True,
         "method": "oauth_code",
