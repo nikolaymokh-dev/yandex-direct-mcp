@@ -9,6 +9,7 @@ from server.cli.runner import CliError, CliNotFoundError, CliTimeoutError
 from server.tools.auth_tools import (
     _human_readable_time,
     _login_finish_args,
+    _login_finish_legacy_args,
     _login_start_args,
     _token_setup_args,
     auth_login,
@@ -191,6 +192,14 @@ class TestAuthSetup:
             "json",
         ]
         assert _login_finish_args() == [
+            "auth",
+            "login",
+            "--profile",
+            "default",
+            "--code",
+            "-",
+        ]
+        assert _login_finish_legacy_args() == [
             "auth",
             "login",
             "--profile",
@@ -423,7 +432,8 @@ class TestAuthLogin:
             "login",
             "--profile",
             "custom",
-            "--code-stdin",
+            "--code",
+            "-",
         ]
         assert mock_run.call_args_list[1].kwargs == {
             "timeout": 60,
@@ -447,6 +457,55 @@ class TestAuthLogin:
     @patch("server.tools.auth_tools._find_direct", return_value="/usr/bin/direct")
     @patch("server.tools.auth_tools._resolve_profile_name", return_value="custom")
     @patch("server.tools.auth_tools.DirectCliRunner.run")
+    def test_auth_login_falls_back_to_legacy_code_stdin(
+        self, mock_run, _mock_resolve, _mock_find, _mock_status
+    ) -> None:
+        mock_run.side_effect = [
+            _completed(
+                json.dumps({"authorize_url": "https://oauth.yandex.ru/authorize?x=1"})
+            ),
+            _completed(stderr="invalid authorization code", returncode=1),
+            _completed("saved"),
+        ]
+
+        result = asyncio.run(auth_login(self._accepted_ctx(), profile="custom"))
+
+        assert mock_run.call_args_list[1].args[0] == [
+            "auth",
+            "login",
+            "--profile",
+            "custom",
+            "--code",
+            "-",
+        ]
+        assert mock_run.call_args_list[2].args[0] == [
+            "auth",
+            "login",
+            "--profile",
+            "custom",
+            "--code-stdin",
+        ]
+        assert mock_run.call_args_list[1].kwargs == {
+            "timeout": 60,
+            "input": "ABC123\n",
+        }
+        assert mock_run.call_args_list[2].kwargs == {
+            "timeout": 60,
+            "input": "ABC123\n",
+        }
+        for call in mock_run.call_args_list:
+            assert "ABC123" not in call.args[0]
+        assert result == {
+            "success": True,
+            "method": "oauth_code",
+            "profile": "custom",
+            "login": "",
+        }
+
+    @patch("server.tools.auth_tools.auth_status", return_value={"valid": False})
+    @patch("server.tools.auth_tools._find_direct", return_value="/usr/bin/direct")
+    @patch("server.tools.auth_tools._resolve_profile_name", return_value="custom")
+    @patch("server.tools.auth_tools.DirectCliRunner.run")
     def test_auth_login_finish_cli_failure(
         self, mock_run, _mock_resolve, _mock_find, _mock_status
     ) -> None:
@@ -454,6 +513,7 @@ class TestAuthLogin:
             _completed(
                 json.dumps({"authorize_url": "https://oauth.yandex.ru/authorize?x=1"})
             ),
+            _completed(stderr="\x1b[31mbad code\x1b[0m", returncode=1),
             _completed(stderr="\x1b[31mbad code\x1b[0m", returncode=1),
         ]
 
@@ -477,6 +537,7 @@ class TestAuthLogin:
             _completed(
                 json.dumps({"authorize_url": "https://oauth.yandex.ru/authorize?x=1"})
             ),
+            CliError("direct failed"),
             CliError("direct failed"),
         ]
 
