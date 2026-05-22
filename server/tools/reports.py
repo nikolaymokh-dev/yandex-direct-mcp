@@ -16,7 +16,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from server.main import mcp
-from server.tools import get_runner, handle_cli_errors
+from server.tools import ToolError, get_runner, handle_cli_errors
 
 DEFAULT_REPORT_TYPE = "CAMPAIGN_PERFORMANCE_REPORT"
 DEFAULT_REPORT_NAME = "mcp_campaign_performance"
@@ -28,6 +28,12 @@ DEFAULT_WINDOW_DAYS = 8
 CUSTOM_REPORT_TIMEOUT_SECONDS = 120
 
 VALID_RESPONSE_FORMATS = frozenset({"json", "tsv", "csv", "table"})
+
+VALID_PROCESSING_MODES = frozenset({"auto", "online", "offline"})
+VALID_REPORT_LANGUAGES = frozenset({"ru", "en"})
+VALID_ATTRIBUTION_MODELS = frozenset(
+    {"FC", "LC", "LSC", "LYDC", "FCCD", "LSCCD", "LYDCCD", "AUTO"}
+)
 
 VALID_REPORT_TYPES = frozenset(
     {
@@ -255,11 +261,44 @@ def _count_json_rows(path: Path) -> int | None:
     return None if array_started else 0
 
 
-def _count_rows_written(output_path: str, response_format: str) -> int | None:
+def _resolved_skip(value: bool | None, cli_default: bool) -> bool:
+    """Effective skip-flag value (plugin's None falls back to CLI default).
+
+    CLI 0.3.10 defaults: skip_report_header=True, skip_report_summary=True,
+    skip_column_header=False (column headers are emitted).
+    """
+    return cli_default if value is None else value
+
+
+def _tsv_overhead_rows(
+    *,
+    skip_report_header: bool | None,
+    skip_column_header: bool,
+    skip_report_summary: bool | None,
+) -> int:
+    """Number of non-data rows a TSV/CSV report contains given skip-flag state.
+
+    CLI 0.3.10 defaults to: report-header skipped, column-header kept,
+    summary skipped. Each ``False`` adds one non-data line to the file.
+    """
+    overhead = 0
+    if not _resolved_skip(skip_report_header, cli_default=True):
+        overhead += 1
+    if not skip_column_header:
+        overhead += 1
+    if not _resolved_skip(skip_report_summary, cli_default=True):
+        overhead += 1
+    return overhead
+
+
+def _count_rows_written(
+    output_path: str, response_format: str, overhead_rows: int = 1
+) -> int | None:
     """Count data rows in a written report file.
 
     Returns 0 only when the file is missing; returns None when an existing file
-    cannot be counted.
+    cannot be counted. ``overhead_rows`` is subtracted for non-JSON formats —
+    callers must compute it from the resolved skip-flag state.
     """
     path = Path(output_path)
     if not path.exists():
@@ -268,7 +307,7 @@ def _count_rows_written(output_path: str, response_format: str) -> int | None:
         if response_format == "json":
             return _count_json_rows(path)
         line_count = sum(1 for _ in path.open())
-        return max(0, line_count - 1)
+        return max(0, line_count - overhead_rows)
     except Exception:
         return None
 
@@ -292,6 +331,12 @@ def reports_custom(
     include_vat: bool | None = None,
     include_discount: bool | None = None,
     return_money_in_micros: bool = False,
+    processing_mode: str | None = None,
+    language: str | None = None,
+    attribution_models: str | None = None,
+    skip_report_header: bool | None = None,
+    skip_column_header: bool = False,
+    skip_report_summary: bool | None = None,
     output_path: str | None = None,
     response_format: str = "json",
     dry_run: bool = False,
@@ -358,6 +403,18 @@ def reports_custom(
             account setting if omitted.
         return_money_in_micros: If True, monetary values are returned in
             micro-RUB (default is RUB with 2 decimals).
+        processing_mode: Reports API processingMode header — one of
+            "auto", "online", "offline". Default is the CLI default (auto).
+        language: Accept-Language for the report — "ru" or "en".
+        attribution_models: Comma-separated conversion attribution models;
+            allowed values: FC, LC, LSC, LYDC, FCCD, LSCCD, LYDCCD, AUTO.
+        skip_report_header: True/False to set / clear the report-header row
+            (title + date range). CLI default skips it (True).
+        skip_column_header: True to omit the column-name row (off by default).
+            CLI has no negative flag for this one — pass False to keep
+            headers (default).
+        skip_report_summary: True/False to set / clear the "Total rows: N"
+            trailing line. CLI default skips it (True).
         output_path: Absolute path under $CLAUDE_PLUGIN_DATA or a system temp
             directory to write the full report to. When set, the tool returns
             `{output_path, rows_written, report_type, format}` instead of the
@@ -365,8 +422,11 @@ def reports_custom(
             the file afterwards with regular file tools. Ignored when
             `dry_run=True` (the dry run always returns the request body
             in-memory).
-        response_format: json | tsv | csv | table. Only meaningful with
-            output_path; without it, JSON is always returned in-memory.
+        response_format: json | tsv | csv | table. Honored both for file
+            output (``output_path``) and for in-memory returns. When set to
+            anything other than json without ``output_path``, the result is
+            wrapped as ``{format, report_type, content}`` with the raw CLI
+            stdout in ``content``.
         dry_run: Build and validate the command without calling Yandex.
 
     Examples:
@@ -422,6 +482,36 @@ def reports_custom(
         raise ValueError(
             "pass both date_from and date_to, or use date_range_type for a preset range"
         )
+    if processing_mode is not None and processing_mode not in VALID_PROCESSING_MODES:
+        return ToolError(
+            error="invalid_processing_mode",
+            message=(
+                f"processing_mode must be one of {sorted(VALID_PROCESSING_MODES)}; "
+                f"got {processing_mode!r}."
+            ),
+        ).__dict__
+    if language is not None and language not in VALID_REPORT_LANGUAGES:
+        return ToolError(
+            error="invalid_language",
+            message=(
+                f"language must be one of {sorted(VALID_REPORT_LANGUAGES)}; "
+                f"got {language!r}."
+            ),
+        ).__dict__
+    if attribution_models is not None:
+        tokens = [t.strip() for t in attribution_models.split(",") if t.strip()]
+        unknown = [m for m in tokens if m not in VALID_ATTRIBUTION_MODELS]
+        if unknown:
+            return ToolError(
+                error="invalid_attribution_models",
+                message=(
+                    f"Unknown attribution models: {unknown}. "
+                    f"Allowed: {sorted(VALID_ATTRIBUTION_MODELS)}."
+                ),
+            ).__dict__
+        # Normalize: send a whitespace-clean CSV to the CLI so what we
+        # validated is bit-for-bit what reaches the CLI.
+        attribution_models = ",".join(tokens)
 
     effective_filters: list[str] = list(filters) if filters else []
     if any(_is_goals_filter(f) for f in effective_filters):
@@ -479,22 +569,41 @@ def reports_custom(
     if return_money_in_micros:
         args.append("--return-money-in-micros")
 
+    if processing_mode is not None:
+        args.extend(["--processing-mode", processing_mode])
+    if language is not None:
+        args.extend(["--language", language])
+    if attribution_models is not None:
+        args.extend(["--attribution-models", attribution_models])
+
+    if skip_report_header is True:
+        args.append("--skip-report-header")
+    elif skip_report_header is False:
+        args.append("--no-skip-report-header")
+
+    if skip_column_header:
+        args.append("--skip-column-header")
+
+    if skip_report_summary is True:
+        args.append("--skip-report-summary")
+    elif skip_report_summary is False:
+        args.append("--no-skip-report-summary")
+
     if dry_run:
         args.append("--dry-run")
 
     resolved_output_path: Path | None = None
     if output_path and not dry_run:
         resolved_output_path = _resolve_output_path(output_path)
-        args.extend(
-            ["--output", str(resolved_output_path), "--format", response_format]
-        )
-    else:
-        args.extend(["--format", "json"])
+        args.extend(["--output", str(resolved_output_path)])
+    args.extend(["--format", response_format])
 
     runner = get_runner()
-    result = runner.run_json(args, timeout=CUSTOM_REPORT_TIMEOUT_SECONDS)
 
+    # Dry-run always emits JSON ({command, headers, body}) regardless of
+    # response_format, so it's safe to go through run_json.
     if dry_run:
+        result = runner.run_json(args, timeout=CUSTOM_REPORT_TIMEOUT_SECONDS)
         request_body: dict | list | None
         if isinstance(result, dict) and "body" in result:
             request_body = result["body"]
@@ -506,14 +615,36 @@ def reports_custom(
             "request_body": request_body,
         }
 
+    overhead = _tsv_overhead_rows(
+        skip_report_header=skip_report_header,
+        skip_column_header=skip_column_header,
+        skip_report_summary=skip_report_summary,
+    )
+
     if resolved_output_path is not None:
+        # CLI writes the file itself; stdout is irrelevant for parsing.
+        # run_checked raises CliError on non-zero exit so handle_cli_errors
+        # can convert it into a structured ToolError.
+        runner.run_checked(args, timeout=CUSTOM_REPORT_TIMEOUT_SECONDS)
         return {
             "output_path": str(resolved_output_path),
             "rows_written": _count_rows_written(
-                str(resolved_output_path), response_format
+                str(resolved_output_path), response_format, overhead_rows=overhead
             ),
             "report_type": report_type,
             "format": response_format,
         }
 
-    return result
+    if response_format == "json":
+        return runner.run_json(args, timeout=CUSTOM_REPORT_TIMEOUT_SECONDS)
+
+    # In-memory TSV / CSV / table: return the raw stdout payload — CLI
+    # already strips the report-header and summary rows by default, so the
+    # text is ready for downstream consumers. run_checked surfaces non-zero
+    # exits as CliError instead of silently returning empty content.
+    completed = runner.run_checked(args, timeout=CUSTOM_REPORT_TIMEOUT_SECONDS)
+    return {
+        "format": response_format,
+        "report_type": report_type,
+        "content": completed.stdout,
+    }
