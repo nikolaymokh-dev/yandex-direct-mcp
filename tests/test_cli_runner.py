@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from server.cli.runner import (
+    MIN_DIRECT_VERSION,
     CliAuthError,
     CliNotFoundError,
     CliRegistrationError,
@@ -15,6 +16,37 @@ from server.cli.runner import (
     _find_direct,
     _probe_direct_version,
     _reset_direct_cache,
+)
+
+# Use the runtime floor as the "known-good" version in mocks so that future
+# bumps of MIN_DIRECT_VERSION don't silently turn every mocked binary stale.
+_KNOWN_GOOD_VERSION = MIN_DIRECT_VERSION
+
+
+def _stale_version_below(floor: tuple[int, int, int]) -> tuple[int, int, int]:
+    """Return a version strictly below ``floor`` for rejection-path tests.
+
+    claude[bot] PR #123 cycle-review (Low): naively doing ``patch - 1`` and
+    clamping at zero collapsed to ``floor`` itself for ``.0`` patches, e.g.
+    a floor of ``(0, 4, 0)`` would produce ``(0, 4, 0)`` and silently turn
+    every rejection assertion into a tautology. Decrement minor (or major)
+    when the lower component is already zero, so the result is guaranteed
+    less than ``floor`` for every realistic floor.
+    """
+    major, minor, patch = floor
+    if patch > 0:
+        return (major, minor, patch - 1)
+    if minor > 0:
+        return (major, minor - 1, 0)
+    if major > 0:
+        return (major - 1, 0, 0)
+    raise ValueError(f"cannot derive a stale version below {floor!r}")
+
+
+_KNOWN_STALE_VERSION = _stale_version_below(MIN_DIRECT_VERSION)
+assert _KNOWN_STALE_VERSION < MIN_DIRECT_VERSION, (
+    "_KNOWN_STALE_VERSION must be strictly below the runtime floor "
+    "or the version-rejection tests degenerate into tautologies"
 )
 
 
@@ -54,9 +86,12 @@ def _isolate_explicit_env_var():
 class TestIsAvailable:
     @pytest.fixture(autouse=True)
     def _accept_all_versions(self):
-        # Otherwise a real `/usr/bin/direct` below 0.3.10 would cause
-        # `is_available()` to fail-closed and break test_available.
-        with patch("server.cli.runner._probe_direct_version", return_value=(0, 3, 10)):
+        # Otherwise a real `/usr/bin/direct` below the runtime floor would
+        # cause `is_available()` to fail-closed and break test_available.
+        with patch(
+            "server.cli.runner._probe_direct_version",
+            return_value=_KNOWN_GOOD_VERSION,
+        ):
             yield
 
     def test_available(self, runner, tmp_path):
@@ -86,12 +121,16 @@ class TestIsAvailable:
 
 @pytest.mark.mocks
 class TestFindDirect:
-    """Treat every probed binary as 0.3.10 so legacy candidates resolve normally;
-    the explicit min-version regression cases live in TestFindDirectVersionFloor."""
+    """Treat every probed binary as known-good so legacy candidates resolve
+    normally; the explicit min-version regression cases live in
+    TestFindDirectVersionFloor."""
 
     @pytest.fixture(autouse=True)
     def _accept_all_versions(self):
-        with patch("server.cli.runner._probe_direct_version", return_value=(0, 3, 10)):
+        with patch(
+            "server.cli.runner._probe_direct_version",
+            return_value=_KNOWN_GOOD_VERSION,
+        ):
             yield
 
     def test_explicit_env_var(self, tmp_path):
@@ -167,9 +206,9 @@ class TestFindDirectVersionFloor:
 
         def fake_probe(executable: str) -> tuple[int, int, int] | None:
             if executable == "/usr/bin/direct":
-                return (0, 3, 4)  # stale CLI on PATH
+                return _KNOWN_STALE_VERSION  # stale CLI on PATH
             if executable == str(local_bin):
-                return (0, 3, 10)  # freshly installed by setup.sh
+                return _KNOWN_GOOD_VERSION  # freshly installed by setup.sh
             return None
 
         with (
@@ -192,7 +231,7 @@ class TestFindDirectVersionFloor:
         local_bin.touch()
 
         def fake_probe(executable: str) -> tuple[int, int, int] | None:
-            return (0, 3, 10)  # everyone is known-good
+            return _KNOWN_GOOD_VERSION  # everyone is known-good
 
         with (
             patch.dict(
@@ -226,9 +265,9 @@ class TestFindDirectVersionFloor:
 
         def fake_probe(executable: str) -> tuple[int, int, int] | None:
             if executable == str(direct_bin):
-                return (0, 3, 4)  # stale explicit override
+                return _KNOWN_STALE_VERSION  # stale explicit override
             if executable == str(local_bin):
-                return (0, 3, 10)  # fresh user-local install
+                return _KNOWN_GOOD_VERSION  # fresh user-local install
             return None
 
         with (
@@ -259,7 +298,7 @@ class TestFindDirectVersionFloor:
             if executable == str(direct_bin):
                 return None  # broken wrapper (e.g. ModuleNotFoundError)
             if executable == str(local_bin):
-                return (0, 3, 10)
+                return _KNOWN_GOOD_VERSION
             return None
 
         with (
@@ -309,7 +348,7 @@ class TestFindDirectVersionFloor:
             if executable == "/usr/bin/direct":
                 return None  # broken PATH binary (e.g. ModuleNotFoundError)
             if executable == str(local_bin):
-                return (0, 3, 10)
+                return _KNOWN_GOOD_VERSION
             return None
 
         with (
@@ -352,7 +391,10 @@ class TestFindDirectVersionFloor:
                 clear=False,
             ),
             patch("server.cli.runner.shutil.which", return_value="/usr/bin/direct"),
-            patch("server.cli.runner._probe_direct_version", return_value=(0, 3, 4)),
+            patch(
+                "server.cli.runner._probe_direct_version",
+                return_value=_KNOWN_STALE_VERSION,
+            ),
         ):
             assert _find_direct() is None
 
@@ -366,7 +408,7 @@ class TestFindDirectVersionFloor:
             if executable == "/usr/bin/direct":
                 return None  # broken
             if executable == str(local_bin):
-                return (0, 3, 4)  # known-stale
+                return _KNOWN_STALE_VERSION  # known-stale
             return None
 
         with (
@@ -542,7 +584,10 @@ class TestUnverifiedDirectWarning:
                 clear=False,
             ),
             patch("server.cli.runner.shutil.which", return_value="/usr/bin/direct"),
-            patch("server.cli.runner._probe_direct_version", return_value=(0, 3, 10)),
+            patch(
+                "server.cli.runner._probe_direct_version",
+                return_value=_KNOWN_GOOD_VERSION,
+            ),
         ):
             assert _find_direct() == "/usr/bin/direct"
         captured = capsys.readouterr()
@@ -568,7 +613,9 @@ class TestRun:
     def _accept_all_versions(self):
         # Skip the `direct --version` probe so each test's subprocess.run
         # mock observes only the command under test.
-        with patch("server.cli.runner._probe_direct_version", return_value=(0, 3, 10)):
+        with patch(
+            "server.cli.runner._probe_direct_version", return_value=_KNOWN_GOOD_VERSION
+        ):
             yield
 
     def test_successful_run(self, runner):
