@@ -2,9 +2,64 @@
 
 from server.main import mcp
 from server.tools import ToolError, get_runner, handle_cli_errors
+from server.tools.helpers import CliOption, append_cli_options
 
 MAX_BATCH_SIZE = 10
 MOBILE_VALUES = ("YES", "NO")
+
+ADS_ADD_EXTRA_OPTIONS = (
+    CliOption("titles", "--titles"),
+    CliOption("texts", "--texts"),
+    CliOption("image_hashes", "--image-hashes"),
+    CliOption("mobile_app_features", "--mobile-app-feature", repeat=True),
+    CliOption("final_url", "--final-url"),
+    CliOption("video_extension_creative_id", "--video-extension-creative-id"),
+    CliOption("price_extension_price", "--price-extension-price"),
+    CliOption("price_extension_old_price", "--price-extension-old-price"),
+    CliOption("price_extension_price_qualifier", "--price-extension-price-qualifier"),
+    CliOption("price_extension_price_currency", "--price-extension-price-currency"),
+    CliOption("video_extension_ids", "--video-extension-ids"),
+    CliOption("business_id", "--business-id"),
+    CliOption("prefer_vcard_over_business", "--prefer-vcard-over-business"),
+    CliOption("erir_ad_description", "--erir-ad-description"),
+    CliOption("creative_id", "--creative-id"),
+    CliOption("tracking_pixels", "--tracking-pixels"),
+    CliOption("logo_extension_hash", "--logo-extension-hash"),
+    CliOption("feed_id", "--feed-id"),
+    CliOption("feed_filter_conditions", "--feed-filter-condition", repeat=True),
+    CliOption("title_sources", "--title-sources"),
+    CliOption("text_sources", "--text-sources"),
+    CliOption("default_texts", "--default-texts"),
+)
+
+ADS_UPDATE_EXTRA_OPTIONS = (
+    CliOption("status", "--status"),
+    CliOption("titles", "--titles"),
+    CliOption("texts", "--texts"),
+    CliOption("image_hashes", "--image-hashes"),
+    CliOption("mobile_app_features", "--mobile-app-feature", repeat=True),
+    CliOption("callouts_add", "--callouts-add"),
+    CliOption("callouts_remove", "--callouts-remove"),
+    CliOption("callouts_set", "--callouts-set"),
+    CliOption("video_extension_creative_id", "--video-extension-creative-id"),
+    CliOption("video_extension_ids", "--video-extension-ids"),
+    CliOption("price_extension_price", "--price-extension-price"),
+    CliOption("price_extension_old_price", "--price-extension-old-price"),
+    CliOption("price_extension_price_qualifier", "--price-extension-price-qualifier"),
+    CliOption("price_extension_price_currency", "--price-extension-price-currency"),
+    CliOption("business_id", "--business-id"),
+    CliOption("prefer_vcard_over_business", "--prefer-vcard-over-business"),
+    CliOption("erir_ad_description", "--erir-ad-description"),
+    CliOption("logo_extension_hash", "--logo-extension-hash"),
+    CliOption("creative_id", "--creative-id"),
+    CliOption("creative_erir_ad_description", "--creative-erir-ad-description"),
+    CliOption("final_url", "--final-url"),
+    CliOption("tracking_pixels", "--tracking-pixels"),
+    CliOption("feed_filter_conditions", "--feed-filter-condition", repeat=True),
+    CliOption("title_sources", "--title-sources"),
+    CliOption("text_sources", "--text-sources"),
+    CliOption("default_texts", "--default-texts"),
+)
 
 
 def _parse_ids(ids_str: str) -> list[str]:
@@ -139,11 +194,15 @@ def ads_add(
     ad_type: str | None = None,
     title: str | None = None,
     text: str | None = None,
+    titles: str | None = None,
+    texts: str | None = None,
     href: str | None = None,
     image_hash: str | None = None,
+    image_hashes: str | None = None,
     tracking_url: str | None = None,
     action: str | None = None,
     age_label: str | None = None,
+    mobile_app_features: list[str] | None = None,
     title2: str | None = None,
     display_url_path: str | None = None,
     mobile: str | None = None,
@@ -151,6 +210,24 @@ def ads_add(
     sitelink_set_id: int | None = None,
     turbo_page_id: int | None = None,
     ad_extensions: str | None = None,
+    final_url: str | None = None,
+    video_extension_creative_id: int | None = None,
+    price_extension_price: str | None = None,
+    price_extension_old_price: str | None = None,
+    price_extension_price_qualifier: str | None = None,
+    price_extension_price_currency: str | None = None,
+    video_extension_ids: str | None = None,
+    business_id: int | None = None,
+    prefer_vcard_over_business: str | None = None,
+    erir_ad_description: str | None = None,
+    creative_id: int | None = None,
+    tracking_pixels: str | None = None,
+    logo_extension_hash: str | None = None,
+    feed_id: int | None = None,
+    feed_filter_conditions: list[str] | None = None,
+    title_sources: str | None = None,
+    text_sources: str | None = None,
+    default_texts: str | None = None,
     dry_run: bool = False,
 ) -> dict:
     """Create a new ad.
@@ -220,6 +297,7 @@ def ads_add(
         args.extend(["--turbo-page-id", str(turbo_page_id)])
     if ad_extensions:
         args.extend(["--ad-extensions", ad_extensions])
+    append_cli_options(args, locals(), ADS_ADD_EXTRA_OPTIONS)
     if dry_run:
         args.append("--dry-run")
     runner = get_runner()
@@ -230,14 +308,19 @@ def ads_add(
 @handle_cli_errors
 def ads_update(
     id: int,
-    type: str,
+    type: str | None = None,
+    status: str | None = None,
     title: str | None = None,
     text: str | None = None,
+    titles: str | None = None,
+    texts: str | None = None,
     href: str | None = None,
     image_hash: str | None = None,
+    image_hashes: str | None = None,
     tracking_url: str | None = None,
     action: str | None = None,
     age_label: str | None = None,
+    mobile_app_features: list[str] | None = None,
     title2: str | None = None,
     display_url_path: str | None = None,
     mobile: str | None = None,
@@ -245,14 +328,35 @@ def ads_update(
     sitelink_set_id: int | None = None,
     turbo_page_id: int | None = None,
     ad_extensions: str | None = None,
+    callouts_add: str | None = None,
+    callouts_remove: str | None = None,
+    callouts_set: str | None = None,
+    video_extension_creative_id: int | None = None,
+    video_extension_ids: str | None = None,
+    price_extension_price: str | None = None,
+    price_extension_old_price: str | None = None,
+    price_extension_price_qualifier: str | None = None,
+    price_extension_price_currency: str | None = None,
+    business_id: int | None = None,
+    prefer_vcard_over_business: str | None = None,
+    erir_ad_description: str | None = None,
+    logo_extension_hash: str | None = None,
+    creative_id: int | None = None,
+    creative_erir_ad_description: str | None = None,
+    final_url: str | None = None,
+    tracking_pixels: str | None = None,
+    feed_filter_conditions: list[str] | None = None,
+    title_sources: str | None = None,
+    text_sources: str | None = None,
+    default_texts: str | None = None,
     dry_run: bool = False,
 ) -> dict:
     """Update an ad.
 
-    CLI 0.3.8 made `--type` required for `ads update` and removed the
-    `--status` flag (use `ads_suspend / ads_resume / ads_archive /
-    ads_unarchive` for status changes). CLI 0.3.9 added typed flags for
-    every TextAdUpdateItem WSDL field. Field/type compatibility:
+    CLI 0.3.12 exposes typed flags for supported ad update subtypes. `type`
+    is optional when the CLI can apply the supplied fields without an explicit
+    subtype, and `status` is accepted for typed status updates.
+    Field/type compatibility examples:
 
     - TEXT_AD: title, text, href, title2, display_url_path, mobile, vcard_id,
       sitelink_set_id, turbo_page_id, ad_extensions, image_hash.
@@ -261,14 +365,20 @@ def ads_update(
 
     Args:
         id: Ad ID to update.
-        type: Ad subtype (TEXT_AD | TEXT_IMAGE_AD | MOBILE_APP_AD). Required.
+        type: Optional ad subtype (TEXT_AD, TEXT_IMAGE_AD, MOBILE_APP_AD, and
+            newer 0.3.12 subtype families).
+        status: Optional ad status value.
         title: Optional new title (TEXT_AD / MOBILE_APP_AD).
         text: Optional new text (TEXT_AD / MOBILE_APP_AD).
+        titles: Structured title list for responsive/shopping/listing subtypes.
+        texts: Structured text list for responsive/shopping/listing subtypes.
         href: Optional new URL (TEXT_AD / TEXT_IMAGE_AD).
         image_hash: Optional new image hash (TEXT_AD / TEXT_IMAGE_AD / MOBILE_APP_AD).
+        image_hashes: Structured image hash list for multi-image subtypes.
         tracking_url: Optional MOBILE_APP_AD tracking URL.
         action: Optional MOBILE_APP_AD call-to-action.
         age_label: Optional MOBILE_APP_AD age label.
+        mobile_app_features: Repeated MOBILE_APP_AD feature specs.
         title2: Optional second headline (TEXT_AD).
         display_url_path: Optional display URL path (TEXT_AD).
         mobile: Optional "YES"/"NO" mobile-only ad flag (TEXT_AD).
@@ -276,17 +386,31 @@ def ads_update(
         sitelink_set_id: Optional sitelink set ID (TEXT_AD).
         turbo_page_id: Optional Turbo page ID (TEXT_AD / TEXT_IMAGE_AD).
         ad_extensions: Optional comma-separated ad extension IDs (TEXT_AD).
+        callouts_add/callouts_remove/callouts_set: Callout update operations.
+        video_extension_*: Video extension typed fields.
+        price_extension_*: Price extension typed fields.
+        business_id/prefer_vcard_over_business: Business/VCard binding fields.
+        erir_ad_description: ERIR ad description.
+        logo_extension_hash: Logo extension hash.
+        creative_id/creative_erir_ad_description: Ad builder creative fields.
+        final_url/tracking_pixels: Final URL and tracking pixel fields.
+        feed_filter_conditions: Repeated feed filter condition specs.
+        title_sources/text_sources/default_texts: Smart/ad builder text sources.
         dry_run: Show the direct request without sending it.
     """
     if not any(
         (
             title,
             text,
+            titles,
+            texts,
             href,
             image_hash,
+            image_hashes,
             tracking_url,
             action,
             age_label,
+            mobile_app_features,
             title2,
             display_url_path,
             mobile,
@@ -294,16 +418,41 @@ def ads_update(
             sitelink_set_id,
             turbo_page_id,
             ad_extensions,
+            status,
+            callouts_add,
+            callouts_remove,
+            callouts_set,
+            video_extension_creative_id,
+            video_extension_ids,
+            price_extension_price,
+            price_extension_old_price,
+            price_extension_price_qualifier,
+            price_extension_price_currency,
+            business_id,
+            prefer_vcard_over_business,
+            erir_ad_description,
+            logo_extension_hash,
+            creative_id,
+            creative_erir_ad_description,
+            final_url,
+            tracking_pixels,
+            feed_filter_conditions,
+            title_sources,
+            text_sources,
+            default_texts,
         )
     ):
         return ToolError(
             error="missing_update_fields",
             message=(
-                "Provide at least one of: title, text, href, image_hash, "
-                "tracking_url, action, age_label, title2, display_url_path, "
-                "mobile, vcard_id, sitelink_set_id, turbo_page_id, "
-                "ad_extensions. For status changes use ads_suspend / "
-                "ads_resume / ads_archive / ads_unarchive."
+                "Provide at least one typed update field, for example: title, "
+                "text, href, image_hash, tracking_url, action, age_label, "
+                "title2, display_url_path, mobile, vcard_id, sitelink_set_id, "
+                "turbo_page_id, ad_extensions, status, callouts_*, "
+                "video_extension_*, price_extension_*, business_id, "
+                "creative_id, final_url, tracking_pixels, "
+                "feed_filter_conditions, title_sources, text_sources, or "
+                "default_texts."
             ),
         ).__dict__
     if mobile is not None and mobile not in MOBILE_VALUES:
@@ -312,7 +461,9 @@ def ads_update(
             message=f"mobile must be one of {MOBILE_VALUES}; got '{mobile}'",
         ).__dict__
 
-    args = ["ads", "update", "--id", str(id), "--type", type]
+    args = ["ads", "update", "--id", str(id)]
+    if type is not None:
+        args.extend(["--type", type])
     if title:
         args.extend(["--title", title])
     if text:
@@ -341,6 +492,7 @@ def ads_update(
         args.extend(["--turbo-page-id", str(turbo_page_id)])
     if ad_extensions:
         args.extend(["--ad-extensions", ad_extensions])
+    append_cli_options(args, locals(), ADS_UPDATE_EXTRA_OPTIONS)
     if dry_run:
         args.append("--dry-run")
     runner = get_runner()

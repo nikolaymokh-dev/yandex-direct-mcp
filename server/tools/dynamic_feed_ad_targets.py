@@ -63,6 +63,7 @@ def dynamic_feed_ad_targets_list(
 def dynamic_feed_ad_targets_add(
     ad_group_id: int,
     name: str,
+    conditions: list[str] | None = None,
     condition: str | None = None,
     bid: int | None = None,
     context_bid: int | None = None,
@@ -74,7 +75,9 @@ def dynamic_feed_ad_targets_add(
     Args:
         ad_group_id: Ad group ID.
         name: Target name.
-        condition: Condition spec (e.g. "OPERAND:OPERATOR:ARG1|ARG2").
+        condition: Single condition spec (e.g. "OPERAND:OPERATOR:ARG1|ARG2").
+        conditions: Additional condition specs; each item is forwarded as
+            repeated ``--condition``.
         bid: Optional search bid in micro-units (RUB × 1,000,000); CLI 0.2.10+
             rejects values 0 < x < 100_000 with a "did you mean × 1_000_000" hint.
         context_bid: Optional context bid in micro-units (same rules as `bid`).
@@ -92,6 +95,9 @@ def dynamic_feed_ad_targets_add(
     ]
     if condition is not None:
         args.extend(["--condition", condition])
+    if conditions:
+        for spec in conditions:
+            args.extend(["--condition", spec])
     if bid is not None:
         args.extend(["--bid", str(bid)])
     if context_bid is not None:

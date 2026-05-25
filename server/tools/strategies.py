@@ -7,21 +7,21 @@ from server.tools.helpers import check_batch_limit
 IS_ARCHIVED_VALUES = ("YES", "NO")
 STRATEGY_TYPES = (
     "WbMaximumClicks",
-    "WbMaximumClicksPerBid",
     "WbMaximumConversionRate",
-    "WbMaximumConversionRatePerBid",
     "AverageCpc",
+    "AverageCpcPerCampaign",
+    "AverageCpcPerFilter",
     "AverageCpa",
-    "AverageCpaPerFilter",
     "AverageCpaPerCampaign",
+    "AverageCpaPerFilter",
+    "AverageCpaMultipleGoals",
     "AverageCrr",
-    "AverageCrrPerCampaign",
     "MaxProfit",
-    "MaxProfitPerFilter",
-    "MaxProfitPerCampaign",
     "PayForConversion",
-    "PayForConversionPerFilter",
     "PayForConversionPerCampaign",
+    "PayForConversionPerFilter",
+    "PayForConversionCrr",
+    "PayForConversionMultipleGoals",
 )
 ATTRIBUTION_MODELS = ("LYDC", "FC", "LC", "LSC", "LYDC_WEIGHT", "CROSSTDEVICE")
 
@@ -86,6 +86,11 @@ def strategies_add(
     spend_limit: int | None = None,
     weekly_spend_limit: int | None = None,
     bid_ceiling: int | None = None,
+    custom_period_spend_limit: int | None = None,
+    custom_period_start_date: str | None = None,
+    custom_period_end_date: str | None = None,
+    custom_period_auto_continue: str | None = None,
+    minimum_exploration_budget: int | None = None,
     counter_ids: str | None = None,
     priority_goals: list[str] | None = None,
     attribution_model: str | None = None,
@@ -99,12 +104,13 @@ def strategies_add(
 
     Args:
         name: Strategy name.
-        type: Strategy type — one of WbMaximumClicks, WbMaximumClicksPerBid,
-            WbMaximumConversionRate, WbMaximumConversionRatePerBid,
-            AverageCpc, AverageCpa, AverageCpaPerFilter, AverageCpaPerCampaign,
-            AverageCrr, AverageCrrPerCampaign, MaxProfit, MaxProfitPerFilter,
-            MaxProfitPerCampaign, PayForConversion, PayForConversionPerFilter,
-            PayForConversionPerCampaign.
+        type: Strategy type — one of WbMaximumClicks,
+            WbMaximumConversionRate, AverageCpc, AverageCpcPerCampaign,
+            AverageCpcPerFilter, AverageCpa, AverageCpaPerCampaign,
+            AverageCpaPerFilter, AverageCpaMultipleGoals, AverageCrr,
+            MaxProfit, PayForConversion, PayForConversionPerCampaign,
+            PayForConversionPerFilter, PayForConversionCrr,
+            PayForConversionMultipleGoals.
         average_cpc: Average CPC in micro-units (RUB × 1,000,000).
         average_cpa: Average CPA in micro-units (RUB × 1,000,000).
         average_crr: Average cost-revenue ratio (integer percent).
@@ -112,6 +118,11 @@ def strategies_add(
         spend_limit: Spend limit in micro-units.
         weekly_spend_limit: Weekly spend limit in micro-units.
         bid_ceiling: Bid ceiling in micro-units.
+        custom_period_spend_limit: Custom period spend limit in micro-units.
+        custom_period_start_date: Custom period start date.
+        custom_period_end_date: Custom period end date.
+        custom_period_auto_continue: Custom period auto-continue flag.
+        minimum_exploration_budget: Minimum exploration budget in micro-units.
         counter_ids: Comma-separated Metrica counter IDs.
         priority_goals: List of "GOAL_ID:VALUE" specs (each becomes a
             repeated --priority-goal flag).
@@ -147,6 +158,16 @@ def strategies_add(
         args.extend(["--weekly-spend-limit", str(weekly_spend_limit)])
     if bid_ceiling is not None:
         args.extend(["--bid-ceiling", str(bid_ceiling)])
+    if custom_period_spend_limit is not None:
+        args.extend(["--custom-period-spend-limit", str(custom_period_spend_limit)])
+    if custom_period_start_date is not None:
+        args.extend(["--custom-period-start-date", custom_period_start_date])
+    if custom_period_end_date is not None:
+        args.extend(["--custom-period-end-date", custom_period_end_date])
+    if custom_period_auto_continue is not None:
+        args.extend(["--custom-period-auto-continue", custom_period_auto_continue])
+    if minimum_exploration_budget is not None:
+        args.extend(["--minimum-exploration-budget", str(minimum_exploration_budget)])
     if counter_ids is not None:
         args.extend(["--counter-ids", counter_ids])
     if priority_goals:
@@ -173,6 +194,11 @@ def strategies_update(
     spend_limit: int | None = None,
     weekly_spend_limit: int | None = None,
     bid_ceiling: int | None = None,
+    custom_period_spend_limit: int | None = None,
+    custom_period_start_date: str | None = None,
+    custom_period_end_date: str | None = None,
+    custom_period_auto_continue: str | None = None,
+    minimum_exploration_budget: int | None = None,
     counter_ids: str | None = None,
     priority_goals: list[str] | None = None,
     attribution_model: str | None = None,
@@ -212,6 +238,11 @@ def strategies_update(
                 spend_limit,
                 weekly_spend_limit,
                 bid_ceiling,
+                custom_period_spend_limit,
+                custom_period_start_date,
+                custom_period_end_date,
+                custom_period_auto_continue,
+                minimum_exploration_budget,
                 counter_ids,
                 attribution_model,
             )
@@ -223,7 +254,8 @@ def strategies_update(
             message=(
                 "Provide at least one of: name, type, average_cpc, average_cpa, "
                 "average_crr, goal_id, spend_limit, weekly_spend_limit, "
-                "bid_ceiling, counter_ids, priority_goals, attribution_model"
+                "bid_ceiling, custom_period_*, minimum_exploration_budget, "
+                "counter_ids, priority_goals, attribution_model"
             ),
         ).__dict__
     if type is not None and type not in STRATEGY_TYPES:
@@ -259,6 +291,16 @@ def strategies_update(
         args.extend(["--weekly-spend-limit", str(weekly_spend_limit)])
     if bid_ceiling is not None:
         args.extend(["--bid-ceiling", str(bid_ceiling)])
+    if custom_period_spend_limit is not None:
+        args.extend(["--custom-period-spend-limit", str(custom_period_spend_limit)])
+    if custom_period_start_date is not None:
+        args.extend(["--custom-period-start-date", custom_period_start_date])
+    if custom_period_end_date is not None:
+        args.extend(["--custom-period-end-date", custom_period_end_date])
+    if custom_period_auto_continue is not None:
+        args.extend(["--custom-period-auto-continue", custom_period_auto_continue])
+    if minimum_exploration_budget is not None:
+        args.extend(["--minimum-exploration-budget", str(minimum_exploration_budget)])
     if counter_ids is not None:
         args.extend(["--counter-ids", counter_ids])
     if priority_goals:

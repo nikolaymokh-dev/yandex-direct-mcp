@@ -62,23 +62,70 @@ def bids_list(
 @mcp.tool(name="bids_set")
 @handle_cli_errors
 def bids_set(
-    keyword_id: int,
+    keyword_id: int | None = None,
+    campaign_id: int | None = None,
+    ad_group_id: int | None = None,
     bid: int | None = None,
+    context_bid: int | None = None,
+    autotargeting_search_bid_is_auto: str | None = None,
+    priority: str | None = None,
     dry_run: bool = False,
 ) -> dict:
     """Set a keyword bid.
 
-    CLI 0.3.8 dropped --json; the only typed knob is --bid for a single keyword.
+    CLI 0.3.12 supports keyword-, campaign-, and ad-group-scoped bid updates
+    with typed search/context bid, autotargeting, and priority fields.
 
     Args:
-        keyword_id: Keyword ID.
+        keyword_id: Keyword ID selector.
+        campaign_id: Campaign ID selector.
+        ad_group_id: Ad group ID selector.
         bid: Bid in micro-units (RUB × 1,000,000); CLI 0.2.10+ rejects values
             0 < x < 100_000 with a "did you mean × 1_000_000" hint.
+        context_bid: Context bid in micro-units.
+        autotargeting_search_bid_is_auto: Autotargeting search bid auto flag.
+        priority: Strategy priority.
         dry_run: Show the direct request without sending it.
     """
-    args = ["bids", "set", "--keyword-id", str(keyword_id)]
+    if keyword_id is None and campaign_id is None and ad_group_id is None:
+        return ToolError(
+            error="missing_target_scope",
+            message="Provide at least one of: keyword_id, campaign_id, ad_group_id",
+        ).__dict__
+    if (
+        bid is None
+        and context_bid is None
+        and autotargeting_search_bid_is_auto is None
+        and priority is None
+    ):
+        return ToolError(
+            error="missing_update_fields",
+            message=(
+                "Provide at least one of: bid, context_bid, "
+                "autotargeting_search_bid_is_auto, priority"
+            ),
+        ).__dict__
+
+    args = ["bids", "set"]
+    if campaign_id is not None:
+        args.extend(["--campaign-id", str(campaign_id)])
+    if ad_group_id is not None:
+        args.extend(["--adgroup-id", str(ad_group_id)])
+    if keyword_id is not None:
+        args.extend(["--keyword-id", str(keyword_id)])
     if bid is not None:
         args.extend(["--bid", str(bid)])
+    if context_bid is not None:
+        args.extend(["--context-bid", str(context_bid)])
+    if autotargeting_search_bid_is_auto is not None:
+        args.extend(
+            [
+                "--autotargeting-search-bid-is-auto",
+                autotargeting_search_bid_is_auto,
+            ]
+        )
+    if priority is not None:
+        args.extend(["--priority", priority])
     if dry_run:
         args.append("--dry-run")
     runner = get_runner()

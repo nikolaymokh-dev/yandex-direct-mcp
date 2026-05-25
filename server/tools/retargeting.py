@@ -46,6 +46,8 @@ def retargeting_list(
 def retargeting_add(
     name: str,
     list_type: str = "RETARGETING",
+    description: str | None = None,
+    rules: list[str] | None = None,
     rule: str | None = None,
     dry_run: bool = False,
 ) -> dict:
@@ -60,7 +62,10 @@ def retargeting_add(
         name: Name for the retargeting list.
         list_type: List type — RETARGETING (default, text & image / mobile
             campaigns) or AUDIENCE (display campaigns).
-        rule: Rule spec (CLI DSL form, see above).
+        description: Optional retargeting list description.
+        rule: Single rule spec (CLI DSL form, see above).
+        rules: Additional rule specs; each item is forwarded as repeated
+            ``--rule``.
         dry_run: Show the direct request without sending it.
     """
     if list_type not in _LIST_TYPES:
@@ -78,6 +83,11 @@ def retargeting_add(
     ]
     if rule is not None:
         args.extend(["--rule", rule])
+    if description is not None:
+        args.extend(["--description", description])
+    if rules:
+        for spec in rules:
+            args.extend(["--rule", spec])
     if dry_run:
         args.append("--dry-run")
     return get_runner().run_json(args)
@@ -101,7 +111,9 @@ def retargeting_delete(ids: str, dry_run: bool = False) -> dict:
 def retargeting_update(
     id: int,
     name: str | None = None,
+    description: str | None = None,
     list_type: str | None = None,
+    rules: list[str] | None = None,
     rule: str | None = None,
     dry_run: bool = False,
 ) -> dict:
@@ -112,14 +124,20 @@ def retargeting_update(
     Args:
         id: Retargeting list ID to update.
         name: New name for the list.
+        description: New list description.
         list_type: New list type (RETARGETING | AUDIENCE).
-        rule: New rule spec in CLI DSL form.
+        rule: Single new rule spec in CLI DSL form.
+        rules: Additional new rule specs; each item is forwarded as repeated
+            ``--rule``.
         dry_run: Show the direct request without sending it.
     """
-    if not any((name, list_type, rule)):
+    if not any((name, description, list_type, rules, rule)):
         return ToolError(
             error="missing_update_fields",
-            message="Provide at least one of: name, list_type, rule",
+            message=(
+                "Provide at least one of: name, description, list_type, "
+                "rule, rules. Use rule for one spec or rules for repeated specs."
+            ),
         ).__dict__
     if list_type is not None and list_type not in _LIST_TYPES:
         return ToolError(
@@ -130,10 +148,15 @@ def retargeting_update(
     args = ["retargeting", "update", "--id", str(id)]
     if name is not None:
         args.extend(["--name", name])
+    if description is not None:
+        args.extend(["--description", description])
     if list_type is not None:
         args.extend(["--type", list_type])
     if rule is not None:
         args.extend(["--rule", rule])
+    if rules:
+        for spec in rules:
+            args.extend(["--rule", spec])
     if dry_run:
         args.append("--dry-run")
     return get_runner().run_json(args)
