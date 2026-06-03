@@ -77,6 +77,19 @@ _HINTS_BY_ERROR_CODE: dict[int, str] = {
         "Per-account object limit reached (campaigns / ads / keywords). "
         "Archive or delete unused objects first."
     ),
+    8300: (
+        "Ad cannot be removed: it was shown / passed moderation while the "
+        "account had funds. Yandex forbids ads.delete for such ads — use "
+        "ads_archive instead. A draft can only be fully removed by hand in "
+        "the Direct web interface."
+    ),
+    8301: (
+        "Ad group cannot be removed because it still contains ads (error "
+        "8301). Archive the ads first: call ads_get with ad_group_ids to list "
+        "them, then ads_archive for those ads, then retry adgroups_delete. If "
+        "ads_archive also fails with error 8300, the group can only be removed "
+        "from the Direct web interface."
+    ),
     8800: (
         "Object not found. Either the ID is wrong or it belongs to a "
         "different client. Verify with a *_get call."
@@ -158,6 +171,8 @@ def handle_cli_errors(func):
                 error_kind = "transient"
             elif e.error_code == 8800:
                 error_kind = "not_found"
+            elif e.error_code == 8300 or e.error_code == 8301:
+                error_kind = "invalid_status"
             elif e.error_code == 9300 or e.error_code == 7001:
                 error_kind = "limit_exceeded"
             else:
