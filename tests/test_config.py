@@ -6,6 +6,9 @@ from server.config import (
     SCENARIO_GROUPS,
     ToolSurfaceConfig,
     all_groups,
+    apply_tool_surface,
+    config_from_env,
+    env_config_warnings,
     groups_for_tool,
     tool_names,
 )
@@ -108,3 +111,121 @@ def test_unknown_groups_flags_typos():
         disabled_groups=frozenset({"destructiv"}),
     )
     assert cfg.unknown_groups() == frozenset({"campaignz", "destructiv"})
+
+
+# --- env config + registration -------------------------------------------
+
+
+def test_config_from_env_default_is_full():
+    cfg = config_from_env({})
+    assert cfg.enabled_tool_names() == tool_names()
+
+
+def test_config_from_env_disabled_groups_subtracts_from_full():
+    cfg = config_from_env({"YANDEX_DIRECT_DISABLED_GROUPS": "destructive"})
+    enabled = cfg.enabled_tool_names()
+    assert "campaigns_delete" not in enabled
+    assert "campaigns_get" in enabled
+
+
+def test_config_from_env_enabled_groups_is_allowlist():
+    cfg = config_from_env({"YANDEX_DIRECT_ENABLED_GROUPS": "analytics"})
+    enabled = cfg.enabled_tool_names()
+    assert "reports_get" in enabled
+    assert "campaigns_add" not in enabled
+
+
+def test_config_from_env_csv_and_tools():
+    cfg = config_from_env(
+        {"YANDEX_DIRECT_DISABLED_TOOLS": "campaigns_delete, ads_archive"}
+    )
+    assert cfg.is_enabled("campaigns_delete") is False
+    assert cfg.is_enabled("ads_archive") is False
+    assert cfg.is_enabled("campaigns_get") is True
+
+
+def test_config_from_env_known_profile_full():
+    assert config_from_env(
+        {"YANDEX_DIRECT_TOOL_PROFILE": "full"}
+    ).enabled_tool_names() == (tool_names())
+
+
+def test_env_config_warnings_unknown_profile():
+    env = {"YANDEX_DIRECT_TOOL_PROFILE": "nope"}
+    cfg = config_from_env(env)
+    warnings = env_config_warnings(env, cfg)
+    assert any("nope" in w for w in warnings)
+    # unknown profile falls back to full
+    assert cfg.enabled_tool_names() == tool_names()
+
+
+def test_env_config_warnings_unknown_group():
+    env = {"YANDEX_DIRECT_DISABLED_GROUPS": "destructiv"}
+    cfg = config_from_env(env)
+    assert any("destructiv" in w for w in env_config_warnings(env, cfg))
+
+
+class _StubManager:
+    def __init__(self, names):
+        self._tools = {n: object() for n in names}
+
+
+class _StubMcp:
+    def __init__(self, names):
+        self._tool_manager = _StubManager(names)
+
+    def remove_tool(self, name):
+        del self._tool_manager._tools[name]
+
+
+def test_apply_tool_surface_removes_disabled():
+    mcp = _StubMcp(["campaigns_get", "campaigns_delete", "ads_archive"])
+    cfg = ToolSurfaceConfig(disabled_groups=frozenset({"destructive"}))
+    removed = apply_tool_surface(mcp, cfg)
+    assert set(removed) == {"campaigns_delete", "ads_archive"}
+    assert set(mcp._tool_manager._tools) == {"campaigns_get"}
+
+
+def test_apply_tool_surface_full_removes_nothing():
+    mcp = _StubMcp(["campaigns_get", "campaigns_delete"])
+    removed = apply_tool_surface(mcp, ToolSurfaceConfig())
+    assert removed == []
+    assert set(mcp._tool_manager._tools) == {"campaigns_get", "campaigns_delete"}
+
+
+def test_apply_tool_surface_failsafe_keeps_full_when_all_disabled():
+    """An allow-list that matches nothing must NOT wipe the whole surface."""
+    mcp = _StubMcp(["campaigns_get", "ads_get"])
+    # allow-list mode naming a non-existent group → every tool 'disabled'
+    cfg = ToolSurfaceConfig(
+        default_enabled=False, enabled_groups=frozenset({"typo_group"})
+    )
+    removed = apply_tool_surface(mcp, cfg)
+    assert removed == []
+    assert set(mcp._tool_manager._tools) == {"campaigns_get", "ads_get"}
+
+
+def test_config_from_env_enabled_groups_typo_warns_and_keeps_full():
+    """A typo in YANDEX_DIRECT_ENABLED_GROUPS surfaces a zero-tools warning."""
+    cfg = config_from_env({"YANDEX_DIRECT_ENABLED_GROUPS": "analyticz"})
+    warnings = env_config_warnings({"YANDEX_DIRECT_ENABLED_GROUPS": "analyticz"}, cfg)
+    assert any("zero tools" in w for w in warnings)
+    assert any("unknown tool groups" in w for w in warnings)
+
+
+def test_config_from_env_enabled_tools_typo_warns():
+    """A typo in YANDEX_DIRECT_ENABLED_TOOLS is now flagged (previously silent)."""
+    env = {"YANDEX_DIRECT_ENABLED_TOOLS": "campaign_delete"}  # missing 's'
+    cfg = config_from_env(env)
+    warnings = env_config_warnings(env, cfg)
+    assert any("unknown tool names" in w for w in warnings)
+    assert any("zero tools" in w for w in warnings)
+
+
+def test_config_from_env_valid_enabled_group_no_zero_warning():
+    """A valid allow-list group narrows the surface without the zero-tools warning."""
+    env = {"YANDEX_DIRECT_ENABLED_GROUPS": "read"}
+    cfg = config_from_env(env)
+    warnings = env_config_warnings(env, cfg)
+    assert not any("zero tools" in w for w in warnings)
+    assert any(cfg.is_enabled(name) for name in tool_names())
