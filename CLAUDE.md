@@ -392,7 +392,7 @@ New tools added in v2 (`advideos_*`, `bids_set_auto`, `keywordbids_set_auto`, `r
 - All money parameters (bids, budgets, CPC/CPA, ceilings) are in **micro-units**: 15 RUB = 15,000,000. CLI 0.2.10+ rejects values `0 < x < 100_000` with a "did you mean × 1_000_000?" hint.
 - API batch limit: max 10 IDs per request
 - OAuth tokens are stored as direct auth profiles, normally in `~/.direct-cli/auth.json`.
-- CLI binary: `direct` (installed via `pip install direct-cli`). Minimum required: `direct-cli>=0.4.2`.
+- CLI binary: `direct` (installed via `pip install direct-cli`). Minimum required: `direct-cli>=0.4.3`.
 - `reports_custom(goal_ids=...)` adds per-goal output columns: `Conversions_<goal_id>_<attribution>` and same for `CostPerConversion`. Default attribution code is `LSC`.
 - Language: project docs in Russian, code identifiers in English
 
@@ -527,10 +527,10 @@ yet forward. **Additive only** — existing single-item calls are unchanged.
   `--type` to pick the typed payload branch; the plugin forwards the CLI's
   error rather than re-validating.
 
-- **Dev CLI.** These features live on direct-cli `main`, not yet on PyPI
-  (`main` still reports `version 0.4.2`). Install the dev build to use them:
-  `pip install 'direct-cli @ git+https://github.com/axisrow/direct-cli@main'`.
-  The runtime floor stays `direct-cli>=0.4.2` (the version number is unchanged).
+- **Released in direct-cli 0.4.3 (PyPI).** These features previously lived only
+  on direct-cli `main`; 0.4.3 ships them on PyPI (#562–565 batch ads/adgroups,
+  #552 `--clear-image-hash`). No git/dev build is needed any more — see the
+  CLI 0.4.3 alignment section below; the runtime floor is now `direct-cli>=0.4.3`.
 
 - **No tool count change.** 146 tools — new parameters, not new tools.
 
@@ -540,3 +540,37 @@ yet forward. **Additive only** — existing single-item calls are unchanged.
   follow-up to #555). Live API confirms limits are per-method/per-filter
   (`ads get` CampaignIds=10 but Ids>10), so the plugin will drop its duplicate
   once the CLI covers all `get` commands. Not changed in this iteration.
+
+## Breaking Changes (CLI 0.4.3 alignment)
+
+- **`direct-cli>=0.4.3` alignment**: the minimum CLI bump promotes to PyPI the
+  features the plugin already forwards from direct-cli `main`. The runtime floor
+  moves to 0.4.3 in the 4 canonical places (`pyproject.toml`, `hooks/setup.sh`
+  ×2, `README.md`); the `_has_direct_cli_0402` venv guard became
+  `_has_direct_cli_0403` (`< (0, 4, 3)`).
+
+- **No MCP surface change.** 0.4.3 is a stabilization release — it bundles the
+  features the plugin was already built against on `main` and adds nothing the
+  plugin does not yet forward:
+
+  - **Batch `ads add`/`update` + `adgroups add`/`update`** (#562–565) — already
+    forwarded via `from_file` / `ads_json` / `adgroups_json` (see the batch-mode
+    feature section above). The CLI now uses a shared `_batch.py` engine and
+    `build_ad_object()` / `build_adgroup_object()` extraction; the wire form the
+    plugin emits is unchanged.
+  - **`ads update --clear-image-hash`** (#552) — already forwarded as
+    `ads_update(clear_image_hash=True)`.
+  - **IntRange(min=1) on every mutation selector** (#558) — CLI-owned
+    pre-validation; the plugin proxies the `UsageError`, no duplicate guard.
+  - **SelectionCriteria preflight on `keywordbids/dynamicads/smartadtargets
+    get`** (#555) — CLI-owned; this is exactly the validation the plugin is
+    delegating per issue #201 / direct-cli #571.
+  - **Error 8300 hint on delete/moderate** (#548) — the CLI now appends its own
+    8300 hint; the plugin keeps its structured `error`/`hint` mapping on top
+    (value-add, not a duplicate — same rationale as #184/#185).
+  - **`adgroups` empty-string CSV-ID rejection** (#570) — CLI-owned, the dup
+    the plugin closed as superseded (plugin #174).
+
+- **Tool count unchanged (146).** Updated `pyproject.toml`, `hooks/setup.sh`,
+  `README.md`, and this file; plugin/marketplace version bumped via
+  `scripts/update-version.sh`.
