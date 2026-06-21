@@ -8,14 +8,13 @@ Covers:
 * DISABLED_*-only refinement stays on the read-only analytics base.
 """
 
+from server.config import PROFILES, config_from_env
+
 
 def test_run_entry_point_is_callable():
     from server.main import run
 
     assert callable(run)
-
-
-from server.config import PROFILES, config_from_env
 
 
 def _surface(cfg):
