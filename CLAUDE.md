@@ -145,10 +145,16 @@ Run `auth_login` (interactive, uses elicitation) or `auth_setup` (manual code/to
 - `YANDEX_DIRECT_LOGIN` — Direct Client-Login
 - `YANDEX_DIRECT_CLI_PATH` — explicit `direct` binary path
 
-Tool-surface selection (`server/config.py`, default = full 146 tools):
+Tool-surface selection (`server/config.py`):
 
-- `YANDEX_DIRECT_TOOL_PROFILE` — `full` | `core` | `analytics` | `campaign-editor`
-- `YANDEX_DIRECT_ENABLED_GROUPS` / `YANDEX_DIRECT_DISABLED_GROUPS` — group allow/deny (service; action `read`/`mutate`/`destructive` (delete only)/`lifecycle` (suspend/resume/archive/unarchive/moderate); product-area names; or the `financial` risk group for money-movement v4account tools)
+Default surface = **`analytics` (read-only, ~26 tools)**.
+`YANDEX_DIRECT_ENABLE_WRITES=true` → `campaign-editor` profile (~36 tools).
+`YANDEX_DIRECT_ENABLE_FINANCE=true` → re-enables financial tools (deposit/invoice/transfer) only when writes are also active; no-op on the read-only default.
+
+- `YANDEX_DIRECT_ENABLE_WRITES` — `true` → activates `campaign-editor` (campaign management, read + write)
+- `YANDEX_DIRECT_ENABLE_FINANCE` — `true` → re-enables financial tools (only together with `ENABLE_WRITES`)
+- `YANDEX_DIRECT_TOOL_PROFILE` — explicit profile override: `analytics` | `core` | `campaign-editor` | `full`
+- `YANDEX_DIRECT_ENABLED_GROUPS` / `YANDEX_DIRECT_DISABLED_GROUPS` — group allow/deny (service; action `read`/`mutate`/`destructive` (delete only)/`lifecycle` (suspend/resume/archive/unarchive/moderate); product-area names; or the `financial` risk group for money-movement v4account tools). `DISABLED_*` refines the active surface; it does NOT expand to the full surface.
 - `YANDEX_DIRECT_ENABLED_TOOLS` / `YANDEX_DIRECT_DISABLED_TOOLS` — per-tool overrides
 
 Integration tests: copy `.env.test.example` → `.env.test` and fill `YANDEX_OAUTH_TOKEN`, `YANDEX_CLIENT_ID`, `YANDEX_CLIENT_SECRET`, `YANDEX_LOGIN`.
