@@ -27,6 +27,8 @@ Hardened форк [axisrow/yandex-direct-mcp-plugin](https://github.com/axisrow/
 
 > **Важно:** `DISABLED_*` переменные уточняют активную поверхность, но не расширяют её до полного набора. Если одновременно не указаны `ENABLED_*`, не выставлен явный `TOOL_PROFILE` и не установлен `ENABLE_WRITES=true` — сервер стартует в профиле `analytics` (только чтение).
 
+> **Приоритет:** `YANDEX_DIRECT_ENABLE_WRITES` игнорируется, если задан `YANDEX_DIRECT_TOOL_PROFILE` или любая из `YANDEX_DIRECT_ENABLED_GROUPS`/`YANDEX_DIRECT_ENABLED_TOOLS` — явный профиль или allow-list имеют приоритет.
+
 ---
 
 ## Установка
@@ -67,6 +69,14 @@ claude mcp add yandex-direct \
 ```
 
 Поле `"env"` не обязательно — без него сервер запускается в read-only (`analytics`) режиме.
+
+### Запуск standalone (без MCP-клиента, для проверки)
+
+```sh
+uvx --from git+https://github.com/nikolaymokh-dev/yandex-direct-mcp@v0.1.0 yandex-direct-mcp
+```
+
+Запускает stdio-сервер напрямую (для теста установки; обычно сервер запускает MCP-клиент).
 
 ---
 

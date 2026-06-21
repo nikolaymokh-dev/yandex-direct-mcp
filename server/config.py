@@ -231,6 +231,9 @@ class ToolSurfaceConfig:
 # always included as tool-level enables so any profile can still authenticate
 # and look up docs (tool-level beats group-level, so they survive a disabled
 # "mutate" group).
+# auth_setup / auth_login carry a "mutate" action but only write LOCAL auth
+# state (~/.direct-cli/auth.json), NOT Yandex Direct account state — so their
+# presence in the read-only analytics profile is not a privilege violation.
 _ALWAYS_ON = frozenset({"auth_status", "auth_setup", "auth_login", "tool_help"})
 
 PROFILES: dict[str, ToolSurfaceConfig] = {
