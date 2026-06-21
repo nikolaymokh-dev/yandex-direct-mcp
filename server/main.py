@@ -77,5 +77,11 @@ if _REMOVED_TOOLS:
         file=sys.stderr,
     )
 
-if __name__ == "__main__":
+def run() -> None:
+    """Console-script / uvx entry point. Tool registration already happened at
+    import time above; this just starts the stdio server."""
     mcp.run(transport="stdio")
+
+
+if __name__ == "__main__":
+    run()
