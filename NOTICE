@@ -1,0 +1,8 @@
+yandex-direct-mcp (this repository) is a hardened fork of:
+  axisrow/yandex-direct-mcp-plugin — https://github.com/axisrow/yandex-direct-mcp-plugin
+  Copyright (c) 2026 axisrow — MIT License (see LICENSE)
+
+Modifications (c) 2026 nikolaymokh-dev, released under the same MIT License.
+Changes: uvx console-script entry point, read-only (analytics) default,
+YANDEX_DIRECT_ENABLE_WRITES / ENABLE_FINANCE flags, pinned dependency tree.
+See docs/SECURITY.md. OAuth/PKCE is provided by the upstream `direct-cli` package.

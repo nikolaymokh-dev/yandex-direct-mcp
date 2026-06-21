@@ -8,6 +8,10 @@ requires-python = ">=3.11"
 # tests/test_pins_consistency.py enforces alignment. Bump via the script, not by hand.
 dependencies = ["mcp==1.23.3", "direct-cli==0.4.3"]
 
+[project.urls]
+Homepage = "https://github.com/nikolaymokh-dev/yandex-direct-mcp"
+Repository = "https://github.com/nikolaymokh-dev/yandex-direct-mcp"
+
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff", "mypy", "pre-commit"]
 docs = ["sphinx", "sphinx-autodoc-typehints", "furo"]
