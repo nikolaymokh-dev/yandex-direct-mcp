@@ -314,3 +314,27 @@ def test_mcp_server_tools_call_rejects_removed_campaigns_list_alias():
     finally:
         proc.terminate()
         proc.wait(timeout=5)
+
+
+def test_mcp_server_default_surface_is_read_only():
+    """Server with NO tool-surface env vars must expose read tools and hide write tools.
+
+    The _start_server helper already pops all YANDEX_DIRECT_* surface vars, so
+    the subprocess boots with the hardened analytics default. We send tools/list
+    and assert:
+    - ``reports_get`` (read, analytics area) IS present
+    - ``campaigns_add`` (mutate, campaign_management area) is ABSENT
+    """
+    proc = _start_server()  # no env overrides → analytics default
+    try:
+        _initialize(proc)
+        names = _list_tool_names(proc)
+        assert "reports_get" in names, (
+            "reports_get must be present on the default (analytics) surface"
+        )
+        assert "campaigns_add" not in names, (
+            "campaigns_add must be ABSENT on the default read-only surface"
+        )
+    finally:
+        proc.terminate()
+        proc.wait(timeout=5)

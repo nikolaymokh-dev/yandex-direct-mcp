@@ -1,4 +1,12 @@
-"""Hardening tests — Task 2: uvx console-script entry point."""
+"""Hardening tests — entry point + tool-surface defaults/flags.
+
+Covers:
+* uvx console-script entry point (callable ``run``).
+* Safe-by-default contract: no env vars → analytics read-only surface.
+* ENABLE_WRITES opt-in: selects campaign-editor profile.
+* ENABLE_FINANCE gate: finance must NOT open without a write-capable profile.
+* DISABLED_*-only refinement stays on the read-only analytics base.
+"""
 
 
 def test_run_entry_point_is_callable():
@@ -44,4 +52,18 @@ def test_enable_finance_reenables_financial_group():
 
 def test_explicit_groups_branch_preserved():
     cfg = config_from_env({"YANDEX_DIRECT_ENABLED_GROUPS": "analytics"})
+    assert cfg.default_enabled is False
+
+
+def test_enable_finance_without_writes_is_noop():
+    cfg = config_from_env({"YANDEX_DIRECT_ENABLE_FINANCE": "true"})
+    # analytics default is read-only; finance must NOT be enabled without writes
+    assert _surface(cfg) == _surface(PROFILES["analytics"])
+    assert "financial" not in cfg.enabled_groups
+
+
+def test_disabled_groups_only_uses_hardened_default_not_full():
+    # Safe-by-default: DISABLED_* refine the active surface; they do NOT imply the
+    # full surface. Without a profile/ENABLED_*, the base stays read-only (analytics).
+    cfg = config_from_env({"YANDEX_DIRECT_DISABLED_GROUPS": "destructive"})
     assert cfg.default_enabled is False
