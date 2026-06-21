@@ -336,7 +336,10 @@ def config_from_env(env: Mapping[str, str]) -> ToolSurfaceConfig:
     # profile is active (financial is only in disabled_groups for write profiles;
     # on the read-only analytics default this is a no-op, so finance can't leak
     # without writes).
-    if _truthy(env, "YANDEX_DIRECT_ENABLE_FINANCE") and "financial" in result.disabled_groups:
+    if (
+        _truthy(env, "YANDEX_DIRECT_ENABLE_FINANCE")
+        and "financial" in result.disabled_groups
+    ):
         result = replace(
             result,
             enabled_groups=result.enabled_groups | {"financial"},

@@ -77,6 +77,7 @@ if _REMOVED_TOOLS:
         file=sys.stderr,
     )
 
+
 def run() -> None:
     """Console-script / uvx entry point. Tool registration already happened at
     import time above; this just starts the stdio server."""

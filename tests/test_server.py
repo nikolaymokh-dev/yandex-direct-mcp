@@ -256,7 +256,9 @@ def test_mcp_server_tools_call_returns_structured_tool_error():
 
 def test_mcp_server_tools_call_campaigns_get_accepts_valid_state():
     # Use full profile so campaigns_get is available (default is analytics).
-    proc = _start_server(env={**os.environ, "PATH": "", "YANDEX_DIRECT_TOOL_PROFILE": "full"})
+    proc = _start_server(
+        env={**os.environ, "PATH": "", "YANDEX_DIRECT_TOOL_PROFILE": "full"}
+    )
     try:
         _initialize(proc)
         assert proc.stdin is not None

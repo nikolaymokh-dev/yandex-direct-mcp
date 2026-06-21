@@ -159,7 +159,10 @@ def test_config_from_env_default_is_analytics():
 def test_config_from_env_disabled_groups_subtracts_from_full():
     # Explicitly request the full profile, then subtract a group.
     cfg = config_from_env(
-        {"YANDEX_DIRECT_TOOL_PROFILE": "full", "YANDEX_DIRECT_DISABLED_GROUPS": "destructive"}
+        {
+            "YANDEX_DIRECT_TOOL_PROFILE": "full",
+            "YANDEX_DIRECT_DISABLED_GROUPS": "destructive",
+        }
     )
     enabled = cfg.enabled_tool_names()
     assert "campaigns_delete" not in enabled
