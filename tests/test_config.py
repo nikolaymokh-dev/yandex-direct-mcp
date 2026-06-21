@@ -148,13 +148,19 @@ def test_unknown_groups_flags_typos():
 # --- env config + registration -------------------------------------------
 
 
-def test_config_from_env_default_is_full():
+def test_config_from_env_default_is_analytics():
+    # Hardened default: empty env → analytics (read-only) profile.
     cfg = config_from_env({})
-    assert cfg.enabled_tool_names() == tool_names()
+    assert cfg.default_enabled is False
+    assert "reports_get" in cfg.enabled_tool_names()
+    assert "campaigns_add" not in cfg.enabled_tool_names()
 
 
 def test_config_from_env_disabled_groups_subtracts_from_full():
-    cfg = config_from_env({"YANDEX_DIRECT_DISABLED_GROUPS": "destructive"})
+    # Explicitly request the full profile, then subtract a group.
+    cfg = config_from_env(
+        {"YANDEX_DIRECT_TOOL_PROFILE": "full", "YANDEX_DIRECT_DISABLED_GROUPS": "destructive"}
+    )
     enabled = cfg.enabled_tool_names()
     assert "campaigns_delete" not in enabled
     assert "campaigns_get" in enabled
@@ -168,8 +174,12 @@ def test_config_from_env_enabled_groups_is_allowlist():
 
 
 def test_config_from_env_csv_and_tools():
+    # Explicitly request the full profile, then disable specific tools.
     cfg = config_from_env(
-        {"YANDEX_DIRECT_DISABLED_TOOLS": "campaigns_delete, ads_archive"}
+        {
+            "YANDEX_DIRECT_TOOL_PROFILE": "full",
+            "YANDEX_DIRECT_DISABLED_TOOLS": "campaigns_delete, ads_archive",
+        }
     )
     assert cfg.is_enabled("campaigns_delete") is False
     assert cfg.is_enabled("ads_archive") is False

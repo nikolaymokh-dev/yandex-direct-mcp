@@ -29,6 +29,15 @@ def _start_server(env: dict[str, str] | None = None) -> subprocess.Popen[str]:
     proc_env["HOME"] = "/tmp/yandex-direct-mcp-plugin-test-home"
     proc_env.pop("YANDEX_DIRECT_TOKEN", None)
     proc_env.pop("YANDEX_DIRECT_LOGIN", None)
+    # Clear tool-surface vars so subprocess starts with a clean (analytics)
+    # default; each test that needs a specific profile sets it explicitly.
+    proc_env.pop("YANDEX_DIRECT_TOOL_PROFILE", None)
+    proc_env.pop("YANDEX_DIRECT_ENABLED_GROUPS", None)
+    proc_env.pop("YANDEX_DIRECT_DISABLED_GROUPS", None)
+    proc_env.pop("YANDEX_DIRECT_ENABLED_TOOLS", None)
+    proc_env.pop("YANDEX_DIRECT_DISABLED_TOOLS", None)
+    proc_env.pop("YANDEX_DIRECT_ENABLE_WRITES", None)
+    proc_env.pop("YANDEX_DIRECT_ENABLE_FINANCE", None)
     if env:
         proc_env.update(env)
     return subprocess.Popen(
@@ -68,7 +77,8 @@ def _initialize(proc: subprocess.Popen[str]) -> None:
 
 
 def test_mcp_server_registers_all_tools():
-    proc = _start_server()
+    # Explicit full profile required: default is now analytics (hardened).
+    proc = _start_server(env={"YANDEX_DIRECT_TOOL_PROFILE": "full"})
     try:
         _initialize(proc)
 
@@ -113,8 +123,14 @@ def test_mcp_server_respects_disabled_tool_groups():
 
     destructive=delete only; archive is the separate lifecycle group (#205-A),
     so disabling destructive drops campaigns_delete but keeps ads_archive.
+    Use explicit full profile so the disable-list applies to the whole surface.
     """
-    proc = _start_server(env={"YANDEX_DIRECT_DISABLED_GROUPS": "destructive,lifecycle"})
+    proc = _start_server(
+        env={
+            "YANDEX_DIRECT_TOOL_PROFILE": "full",
+            "YANDEX_DIRECT_DISABLED_GROUPS": "destructive,lifecycle",
+        }
+    )
     try:
         _initialize(proc)
         names = _list_tool_names(proc)
@@ -206,7 +222,8 @@ def test_mcp_server_tools_call_auth_status():
 
 
 def test_mcp_server_tools_call_returns_structured_tool_error():
-    proc = _start_server()
+    # Use full profile so campaigns_get is available (default is analytics).
+    proc = _start_server(env={"YANDEX_DIRECT_TOOL_PROFILE": "full"})
     try:
         _initialize(proc)
         assert proc.stdin is not None
@@ -238,7 +255,8 @@ def test_mcp_server_tools_call_returns_structured_tool_error():
 
 
 def test_mcp_server_tools_call_campaigns_get_accepts_valid_state():
-    proc = _start_server(env={**os.environ, "PATH": ""})
+    # Use full profile so campaigns_get is available (default is analytics).
+    proc = _start_server(env={**os.environ, "PATH": "", "YANDEX_DIRECT_TOOL_PROFILE": "full"})
     try:
         _initialize(proc)
         assert proc.stdin is not None

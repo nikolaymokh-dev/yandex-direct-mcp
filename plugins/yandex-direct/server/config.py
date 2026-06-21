@@ -277,6 +277,10 @@ def _split_csv(value: str | None) -> frozenset[str]:
     return frozenset(item.strip() for item in value.split(",") if item.strip())
 
 
+def _truthy(env: Mapping[str, str], name: str) -> bool:
+    return (env.get(name) or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def config_from_env(env: Mapping[str, str]) -> ToolSurfaceConfig:
     """Build a :class:`ToolSurfaceConfig` from environment variables.
 
@@ -284,12 +288,19 @@ def config_from_env(env: Mapping[str, str]) -> ToolSurfaceConfig:
 
     * ``YANDEX_DIRECT_TOOL_PROFILE`` picks a :data:`PROFILES` base (unknown name
       falls back to ``full``).
+    * ``YANDEX_DIRECT_ENABLE_WRITES=true`` selects the ``campaign-editor`` profile
+      when no explicit profile/groups/tools are set.
     * otherwise, if any ``ENABLED_*`` var is set, the surface is allow-list mode
       (``default_enabled=False`` — only what's explicitly enabled);
-    * otherwise it is the ``full`` surface and ``DISABLED_*`` vars subtract.
+    * otherwise (hardened default) the server starts in the ``analytics``
+      (read-only) profile — opt into writes via ``YANDEX_DIRECT_ENABLE_WRITES``
+      or an explicit profile.
 
     ``ENABLED_*`` / ``DISABLED_*`` vars are always merged on top of the base, so
     they refine a profile too.
+
+    ``YANDEX_DIRECT_ENABLE_FINANCE=true`` re-enables the ``financial`` group
+    (money-movement tools) on top of any resolved base profile.
     """
     profile = (env.get(ENV_PROFILE) or "").strip().lower()
     enabled_groups = _split_csv(env.get(ENV_ENABLED_GROUPS))
@@ -297,20 +308,38 @@ def config_from_env(env: Mapping[str, str]) -> ToolSurfaceConfig:
     enabled_tools = _split_csv(env.get(ENV_ENABLED_TOOLS))
     disabled_tools = _split_csv(env.get(ENV_DISABLED_TOOLS))
 
+    # Hardened default: read-only (analytics) unless an explicit profile/groups/
+    # tools are given. YANDEX_DIRECT_ENABLE_WRITES opts into campaign management.
+    if not profile and not enabled_groups and not enabled_tools:
+        profile = (
+            "campaign-editor"
+            if _truthy(env, "YANDEX_DIRECT_ENABLE_WRITES")
+            else "analytics"
+        )
+
     if profile:
-        base = PROFILES.get(profile, ToolSurfaceConfig())
+        base = PROFILES.get(profile, ToolSurfaceConfig())  # unknown → full
     elif enabled_groups or enabled_tools:
         base = ToolSurfaceConfig(default_enabled=False)
     else:
         base = ToolSurfaceConfig(default_enabled=True)
 
-    return replace(
+    result = replace(
         base,
         enabled_groups=base.enabled_groups | enabled_groups,
         disabled_groups=base.disabled_groups | disabled_groups,
         enabled_tools=base.enabled_tools | enabled_tools,
         disabled_tools=base.disabled_tools | disabled_tools,
     )
+
+    # Financial tools stay off unless explicitly enabled.
+    if _truthy(env, "YANDEX_DIRECT_ENABLE_FINANCE"):
+        result = replace(
+            result,
+            enabled_groups=result.enabled_groups | {"financial"},
+            disabled_groups=result.disabled_groups - {"financial"},
+        )
+    return result
 
 
 def env_config_warnings(env: Mapping[str, str], config: ToolSurfaceConfig) -> list[str]:

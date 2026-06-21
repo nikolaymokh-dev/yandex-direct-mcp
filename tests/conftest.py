@@ -1,9 +1,18 @@
+import os
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from tests.cli_recorder import CliRecorder
+
+# Hardened default (analytics) is the new runtime default; tests that import
+# server.main at the module level rely on the full 146-tool surface being
+# available in the mcp singleton.  Set this before collection so that
+# apply_tool_surface (called at server.main import time) leaves all tools
+# registered.  Subprocess-based tests clear this from their process env via
+# _start_server (see tests/test_server.py) to get a clean default.
+os.environ.setdefault("YANDEX_DIRECT_TOOL_PROFILE", "full")
 
 RECORDINGS_DIR = Path(__file__).parent / "recordings"
 LIVE_MARKERS = {"integration", "live_safe", "live_unsafe"}
