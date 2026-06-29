@@ -1,0 +1,27 @@
+name: pip-audit
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"   # каждый понедельник 06:00 UTC
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}    # можно запустить вручную из вкладки Actions
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install project + pip-audit
+        run: |
+          pip install -e .
+          pip install pip-audit
+
+      - name: Audit dependencies for known CVEs
+        run: pip-audit

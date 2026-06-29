@@ -1,0 +1,19 @@
+version: 2
+updates:
+  # Python-зависимости (pyproject.toml): обновления + security-алерты
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+
+  # Версии самих GitHub Actions (checkout@v4 и т.п.)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "ci"
