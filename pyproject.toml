@@ -16,7 +16,7 @@ Repository = "https://github.com/nikolaymokh-dev/yandex-direct-mcp"
 yandex-direct-mcp = "server.main:run"
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff", "mypy", "pre-commit"]
+dev = ["pytest>=9.1.1", "ruff", "mypy", "pre-commit"]
 docs = ["sphinx", "sphinx-autodoc-typehints", "furo"]
 
 [build-system]
